@@ -29,6 +29,7 @@ from .mesh.connectivity.flat import (
     create_flat_singlescale_from_coordinates,
 )
 from .mesh.connectivity.hierarchical import create_hierarchical_from_coordinates
+from .mesh.layout import MESH_LAYOUT_OPTIONS
 from .mesh.layout.rectilinear import (
     create_multirange_2d_mesh_primitives as create_multirange_2d_rectilinear_mesh_primitives,
 )
@@ -284,10 +285,11 @@ def create_all_graph_components(
 
     # Validate mesh_layout and resolve the requested mesh node spacing once
     # (shared by all m2m_connectivity modes and both layouts).
-    if mesh_layout not in ("rectilinear", "triangular"):
+    if mesh_layout not in MESH_LAYOUT_OPTIONS:
         raise NotImplementedError(
             f"mesh_layout='{mesh_layout}' is not yet supported. "
-            "Currently supported: 'rectilinear', 'triangular'."
+            "Currently supported: "
+            f"{', '.join(repr(option) for option in MESH_LAYOUT_OPTIONS)}."
         )
 
     mesh_node_spacing = mesh_layout_kwargs.get(
@@ -313,9 +315,12 @@ def create_all_graph_components(
                 xy, mesh_node_spacing=mesh_node_spacing
             )
         else:
+            # Unreachable via the MESH_LAYOUT_OPTIONS check above; guards
+            # against a layout being added to MESH_LAYOUT_OPTIONS without
+            # being wired into this dispatch.
             raise NotImplementedError(
-                f"mesh_layout='{mesh_layout}' is not implemented. "
-                "Supported layouts: 'rectilinear', 'triangular'."
+                f"mesh_layout='{mesh_layout}' is not implemented for "
+                "single-level meshes (m2m_connectivity='flat')."
             )
     else:
         # Multi-level mesh primitives (flat_multiscale or hierarchical)
@@ -337,9 +342,13 @@ def create_all_graph_components(
                 **primitives_kwargs
             )
         else:
+            # Unreachable via the MESH_LAYOUT_OPTIONS check above; guards
+            # against a layout being added to MESH_LAYOUT_OPTIONS without
+            # being wired into this dispatch.
             raise NotImplementedError(
-                f"mesh_layout='{mesh_layout}' is not implemented. "
-                "Supported layouts: 'rectilinear', 'triangular'."
+                f"mesh_layout='{mesh_layout}' is not implemented for "
+                "multi-level meshes (m2m_connectivity="
+                "'flat_multiscale' or 'hierarchical')."
             )
 
     # -----------------------------------------------------------------------

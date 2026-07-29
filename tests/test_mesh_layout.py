@@ -608,6 +608,64 @@ class TestBackwardCompatibility:
 # ====================
 
 
+class TestMeshLayoutOptions:
+    """Tests for the public ``MESH_LAYOUT_OPTIONS`` constant.
+
+    The constant is the single source of truth for which mesh layouts exist,
+    and is consumed by downstream tools (e.g. neural-lam's
+    ``create_graph_with_wmg`` CLI) to populate their layout choices.
+    """
+
+    def test_exposed_on_create_namespace(self):
+        """It must be reachable as ``wmg.create.MESH_LAYOUT_OPTIONS``."""
+        assert hasattr(wmg.create, "MESH_LAYOUT_OPTIONS")
+        options = wmg.create.MESH_LAYOUT_OPTIONS
+        assert len(options) == len(set(options)), "options must be unique"
+        assert all(isinstance(option, str) for option in options)
+        assert "rectilinear" in options
+
+    @pytest.mark.parametrize("mesh_layout", wmg.create.MESH_LAYOUT_OPTIONS)
+    @pytest.mark.parametrize(
+        "m2m_connectivity", ["flat", "flat_multiscale", "hierarchical"]
+    )
+    def test_every_advertised_layout_is_dispatched(self, mesh_layout, m2m_connectivity):
+        """Every advertised layout must actually build a graph.
+
+        This is the drift guard: if a layout name is added to
+        ``MESH_LAYOUT_OPTIONS`` without being wired into the dispatch in
+        ``create_all_graph_components``, this test fails instead of the
+        constant silently advertising something unusable.
+        """
+        xy = test_utils.create_fake_xy(N=32)
+        graph = wmg.create.create_all_graph_components(
+            coords=xy,
+            m2m_connectivity=m2m_connectivity,
+            mesh_layout=mesh_layout,
+            # max_num_refinement_levels is required by the multi-level
+            # layout primitives, which take `max_num_levels` positionally
+            mesh_layout_kwargs=dict(mesh_node_spacing=3, max_num_refinement_levels=3),
+            g2m_connectivity="nearest_neighbour",
+            m2g_connectivity="nearest_neighbour",
+        )
+        assert graph.number_of_nodes() > 0
+
+    def test_error_message_lists_the_advertised_options(self):
+        """The rejection message must be generated from the constant."""
+        xy = test_utils.create_fake_xy(N=32)
+        with pytest.raises(NotImplementedError) as exc_info:
+            wmg.create.create_all_graph_components(
+                coords=xy,
+                m2m_connectivity="flat",
+                mesh_layout="nonexistent_layout",
+                mesh_layout_kwargs=dict(mesh_node_spacing=3),
+                g2m_connectivity="nearest_neighbour",
+                m2g_connectivity="nearest_neighbour",
+            )
+        message = str(exc_info.value)
+        for option in wmg.create.MESH_LAYOUT_OPTIONS:
+            assert repr(option) in message
+
+
 class TestErrorHandling:
     """Tests for proper error handling."""
 

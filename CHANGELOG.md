@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add public `weather_model_graphs.create.MESH_LAYOUT_OPTIONS` constant listing the
+  supported `mesh_layout` names, so downstream tools (e.g. neural-lam's
+  `create_graph_with_wmg` CLI) can populate their layout choices without
+  hardcoding the list. Also used for argument validation and error messages, making
+  it the single source of truth for which layouts exist.
+  [\#661](https://github.com/mllam/neural-lam/issues/661), @prajwal-tech07
 - Add `mesh_layout="triangular"` support to `create_all_graph_components`, using
   `networkx.triangular_lattice_graph` to produce an equilateral-triangle lattice
   with 6-connectivity. Supports all three `m2m_connectivity` modes: `flat`,
