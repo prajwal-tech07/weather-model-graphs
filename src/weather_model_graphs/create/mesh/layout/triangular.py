@@ -155,8 +155,9 @@ def create_single_level_2d_mesh_primitive(
 
 
 def create_multirange_2d_mesh_primitives(
-    max_num_levels,
     xy: np.ndarray,
+    *,
+    max_num_levels: int = None,
     mesh_node_spacing: float = 3,
     interlevel_refinement_factor: int = 3,
 ) -> List[networkx.Graph]:
@@ -169,10 +170,11 @@ def create_multirange_2d_mesh_primitives(
 
     Parameters
     ----------
-    max_num_levels : int
-        Maximum number of levels in the multi-scale graph.
     xy : np.ndarray
         Grid point coordinates, shaped ``[N_grid_points, 2]``.
+    max_num_levels : int, optional
+        Maximum number of levels in the multi-scale graph. If None (default),
+        as many levels are created as the domain allows.
     mesh_node_spacing : float
         Distance between mesh nodes at the finest level, in coordinate units.
     interlevel_refinement_factor : int

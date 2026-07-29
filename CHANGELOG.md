@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased](https://github.com/mllam/weather-model-graphs/compare/v0.3.0...HEAD)
 
+### Fixed
+
+- Make `max_num_levels` optional in the multi-level layout primitives
+  (`create_multirange_2d_mesh_primitives`, both layouts). It was a required
+  positional argument, so calling `create_all_graph_components` with
+  `m2m_connectivity="flat_multiscale"` or `"hierarchical"` and without
+  `max_num_refinement_levels` raised a `TypeError`, despite the argument being
+  documented as optional. Omitting it now creates as many levels as the domain
+  allows. The archetypes were unaffected as they always pass the argument.
+  @prajwal-tech07
+
 ### Added
 
 - Add public `weather_model_graphs.create.MESH_LAYOUT_OPTIONS` constant listing the

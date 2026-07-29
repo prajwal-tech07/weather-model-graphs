@@ -641,13 +641,50 @@ class TestMeshLayoutOptions:
             coords=xy,
             m2m_connectivity=m2m_connectivity,
             mesh_layout=mesh_layout,
-            # max_num_refinement_levels is required by the multi-level
-            # layout primitives, which take `max_num_levels` positionally
-            mesh_layout_kwargs=dict(mesh_node_spacing=3, max_num_refinement_levels=3),
+            mesh_layout_kwargs=dict(mesh_node_spacing=3),
             g2m_connectivity="nearest_neighbour",
             m2g_connectivity="nearest_neighbour",
         )
         assert graph.number_of_nodes() > 0
+
+    @pytest.mark.parametrize("mesh_layout", wmg.create.MESH_LAYOUT_OPTIONS)
+    @pytest.mark.parametrize("m2m_connectivity", ["flat_multiscale", "hierarchical"])
+    def test_max_num_refinement_levels_is_optional(self, mesh_layout, m2m_connectivity):
+        """Multi-level meshes must build without an explicit level cap.
+
+        ``max_num_refinement_levels`` is documented as optional ("maximum
+        number of mesh levels"), and omitting it should simply create as many
+        levels as the domain allows. It previously raised a TypeError because
+        the layout primitives took ``max_num_levels`` as a required positional
+        argument.
+        """
+        # Large enough that three mesh levels fit, so that capping to two
+        # levels is a meaningful restriction. Hierarchical connectivity
+        # requires at least two levels.
+        xy = test_utils.create_fake_xy(N=64)
+        common = dict(
+            coords=xy,
+            m2m_connectivity=m2m_connectivity,
+            mesh_layout=mesh_layout,
+            g2m_connectivity="nearest_neighbour",
+            m2g_connectivity="nearest_neighbour",
+        )
+
+        without_cap = wmg.create.create_all_graph_components(
+            mesh_layout_kwargs=dict(mesh_node_spacing=2), **common
+        )
+        assert without_cap.number_of_nodes() > 0
+
+        # An explicit cap must still be honoured
+        with_cap = wmg.create.create_all_graph_components(
+            mesh_layout_kwargs=dict(mesh_node_spacing=2, max_num_refinement_levels=2),
+            **common,
+        )
+        # Compared on edges rather than nodes: coarser levels reuse node
+        # positions from finer ones, so capping levels need not change the
+        # node count, but it always removes the longer-range edges.
+        assert with_cap.number_of_nodes() > 0
+        assert with_cap.number_of_edges() < without_cap.number_of_edges()
 
     def test_error_message_lists_the_advertised_options(self):
         """The rejection message must be generated from the constant."""
