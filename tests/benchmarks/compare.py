@@ -6,8 +6,10 @@ This consumes the JSON produced by ``graph_creation_scaling.py --output-json``
     [{"grid_points": int, "runtime_s": float, "peak_memory_mb": float | null}, ...]
 
 Given a *baseline* run (typically ``main``) and a *contender* run (the PR), it
-matches records by ``grid_points``, computes the relative change in runtime, and
-renders a Markdown table suitable for posting as a sticky pull-request comment.
+matches records by ``grid_points`` and computes the relative change in both
+runtime and peak memory usage (when both runs recorded memory, i.e. were run
+with ``--track-memory``), rendering a Markdown table suitable for posting as a
+sticky pull-request comment.
 
 The design follows the discussion in
 https://github.com/mllam/weather-model-graphs/issues/144: we compare relative
@@ -73,7 +75,13 @@ def _pct_change(baseline: float, contender: float) -> Optional[float]:
 
 
 class Row:
-    """A single grid-size comparison line in the report."""
+    """A single grid-size comparison line in the report.
+
+    Memory fields are ``None`` when either run didn't record
+    ``peak_memory_mb`` (i.e. wasn't run with ``--track-memory``) for this grid
+    size; the memory columns are omitted from the report entirely when no row
+    has memory data at all.
+    """
 
     def __init__(
         self,
@@ -82,12 +90,28 @@ class Row:
         contender_s: float,
         delta_pct: Optional[float],
         is_regression: bool,
+        baseline_mem_mb: Optional[float] = None,
+        contender_mem_mb: Optional[float] = None,
+        mem_delta_pct: Optional[float] = None,
+        mem_is_regression: bool = False,
     ):
         self.grid_points = grid_points
         self.baseline_s = baseline_s
         self.contender_s = contender_s
         self.delta_pct = delta_pct
         self.is_regression = is_regression
+        self.baseline_mem_mb = baseline_mem_mb
+        self.contender_mem_mb = contender_mem_mb
+        self.mem_delta_pct = mem_delta_pct
+        self.mem_is_regression = mem_is_regression
+
+    @property
+    def has_memory(self) -> bool:
+        return self.baseline_mem_mb is not None and self.contender_mem_mb is not None
+
+    @property
+    def any_regression(self) -> bool:
+        return self.is_regression or self.mem_is_regression
 
 
 def compare(
@@ -95,20 +119,50 @@ def compare(
     contender: Dict[int, dict],
     threshold_pct: float,
 ) -> List[Row]:
-    """Build the per-grid-size comparison rows for the runtime metric.
+    """Build the per-grid-size comparison rows for runtime and peak memory.
 
     Only ``grid_points`` present in *both* runs are compared; unmatched sizes
     are skipped (they show up in the PR diff of the benchmark itself, so there is
     nothing to compare against). Rows are returned sorted by ``grid_points``.
+
+    The memory delta for a row is only computed when *both* the baseline and
+    contender records have a non-null ``peak_memory_mb`` (i.e. both runs used
+    ``--track-memory``); otherwise the row's memory fields stay ``None``.
     """
     common = sorted(set(baseline) & set(contender))
     rows: List[Row] = []
     for gp in common:
-        b = float(baseline[gp]["runtime_s"])
-        c = float(contender[gp]["runtime_s"])
+        b_record = baseline[gp]
+        c_record = contender[gp]
+
+        b = float(b_record["runtime_s"])
+        c = float(c_record["runtime_s"])
         delta = _pct_change(b, c)
         is_regression = delta is not None and delta > threshold_pct
-        rows.append(Row(gp, b, c, delta, is_regression))
+
+        b_mem = b_record.get("peak_memory_mb")
+        c_mem = c_record.get("peak_memory_mb")
+        mem_delta = None
+        mem_is_regression = False
+        if b_mem is not None and c_mem is not None:
+            b_mem = float(b_mem)
+            c_mem = float(c_mem)
+            mem_delta = _pct_change(b_mem, c_mem)
+            mem_is_regression = mem_delta is not None and mem_delta > threshold_pct
+
+        rows.append(
+            Row(
+                gp,
+                b,
+                c,
+                delta,
+                is_regression,
+                b_mem,
+                c_mem,
+                mem_delta,
+                mem_is_regression,
+            )
+        )
     return rows
 
 
@@ -124,6 +178,11 @@ def _fmt_delta(delta: Optional[float], is_regression: bool) -> str:
         return "n/a"
     icon = "⚠️" if is_regression else "✅"
     return f"{delta:+.1f}% {icon}"
+
+
+def _fmt_mb(value: float) -> str:
+    """Format a peak-memory reading in MB."""
+    return f"{value:.1f}MB"
 
 
 def render_markdown(
@@ -143,26 +202,49 @@ def render_markdown(
         )
         return "\n".join(lines) + "\n"
 
-    regressions = [r for r in rows if r.is_regression]
+    has_memory = any(r.has_memory for r in rows)
+    metric_label = "runtime/memory" if has_memory else "runtime"
+
+    regressions = [r for r in rows if r.any_regression]
     if regressions:
         lines.append(
             f"⚠️ **{len(regressions)} of {len(rows)}** grid sizes exceed the "
-            f"**+{threshold_pct:g}%** runtime threshold."
+            f"**+{threshold_pct:g}%** {metric_label} threshold."
         )
     else:
         lines.append(
-            f"✅ No runtime regression above **+{threshold_pct:g}%** "
+            f"✅ No {metric_label} regression above **+{threshold_pct:g}%** "
             f"across {len(rows)} grid sizes."
         )
     lines.append("")
 
-    lines.append(f"| grid points | {baseline_label} | {contender_label} | Δ runtime |")
-    lines.append("|---:|---:|---:|---:|")
+    header = ["grid points", baseline_label, contender_label, "Δ runtime"]
+    if has_memory:
+        header += [
+            f"{baseline_label} peak mem",
+            f"{contender_label} peak mem",
+            "Δ memory",
+        ]
+    lines.append("| " + " | ".join(header) + " |")
+    lines.append("|" + "|".join(["---:"] * len(header)) + "|")
+
     for r in rows:
-        lines.append(
-            f"| {r.grid_points:,} | {_fmt_seconds(r.baseline_s)} | "
-            f"{_fmt_seconds(r.contender_s)} | {_fmt_delta(r.delta_pct, r.is_regression)} |"
-        )
+        row_cells = [
+            f"{r.grid_points:,}",
+            _fmt_seconds(r.baseline_s),
+            _fmt_seconds(r.contender_s),
+            _fmt_delta(r.delta_pct, r.is_regression),
+        ]
+        if has_memory:
+            if r.has_memory:
+                row_cells += [
+                    _fmt_mb(r.baseline_mem_mb),
+                    _fmt_mb(r.contender_mem_mb),
+                    _fmt_delta(r.mem_delta_pct, r.mem_is_regression),
+                ]
+            else:
+                row_cells += ["n/a", "n/a", "n/a"]
+        lines.append("| " + " | ".join(row_cells) + " |")
 
     if unmatched:
         pretty = ", ".join(f"{gp:,}" for gp in unmatched)
@@ -208,9 +290,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--threshold-pct",
         type=float,
         default=0.1,
-        help="Flag a grid size when its runtime increases by more than this "
-        "percentage. Start low and raise it once the runner's noise floor is "
-        "known (default: 0.1).",
+        help="Flag a grid size when its runtime or (if tracked) peak memory "
+        "increases by more than this percentage. Start low and raise it once "
+        "the runner's noise floor is known (default: 0.1).",
     )
     parser.add_argument(
         "--baseline-label", default="main", help="Column label for the baseline."
@@ -270,7 +352,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(markdown)
 
-    if args.fail_on_regression and any(r.is_regression for r in rows):
+    if args.fail_on_regression and any(r.any_regression for r in rows):
         return 1
     return 0
 

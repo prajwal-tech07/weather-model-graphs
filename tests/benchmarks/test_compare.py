@@ -91,6 +91,40 @@ def test_zero_baseline_row_is_not_a_regression():
     assert rows[0].is_regression is False
 
 
+def test_memory_delta_computed_when_both_sides_present():
+    baseline = {1024: _rec(1024, 1.0, peak_memory_mb=100.0)}
+    contender = {1024: _rec(1024, 1.0, peak_memory_mb=130.0)}  # +30%
+    rows = compare.compare(baseline, contender, threshold_pct=25.0)
+    row = rows[0]
+    assert row.has_memory is True
+    assert row.mem_delta_pct == pytest.approx(30.0)
+    assert row.mem_is_regression is True
+    assert row.any_regression is True  # driven by memory even if runtime is flat
+    assert row.is_regression is False  # runtime itself did not regress
+
+
+def test_memory_delta_none_when_either_side_missing():
+    # Contender never tracked memory (peak_memory_mb defaults to None).
+    baseline = {1024: _rec(1024, 1.0, peak_memory_mb=100.0)}
+    contender = {1024: _rec(1024, 1.0)}
+    rows = compare.compare(baseline, contender, threshold_pct=0.1)
+    row = rows[0]
+    assert row.has_memory is False
+    assert row.mem_delta_pct is None
+    assert row.mem_is_regression is False
+    assert row.any_regression is False
+
+
+def test_memory_regression_alone_does_not_affect_runtime_flag():
+    baseline = {1024: _rec(1024, 1.0, peak_memory_mb=100.0)}
+    contender = {1024: _rec(1024, 1.0, peak_memory_mb=200.0)}  # +100% memory
+    rows = compare.compare(baseline, contender, threshold_pct=1.0)
+    row = rows[0]
+    assert row.is_regression is False  # runtime unchanged
+    assert row.mem_is_regression is True
+    assert row.any_regression is True
+
+
 def test_load_results_rejects_empty(tmp_path):
     path = _write(tmp_path, "empty.json", [])
     with pytest.raises(ValueError, match="non-empty list"):
@@ -135,6 +169,47 @@ def test_render_markdown_no_overlap_message():
     assert "No overlapping grid sizes" in md
 
 
+def test_render_markdown_omits_memory_columns_when_absent():
+    rows = compare.compare(
+        {1024: _rec(1024, 1.0)}, {1024: _rec(1024, 1.0)}, threshold_pct=0.1
+    )
+    md = compare.render_markdown(rows, 0.1, "main", "PR")
+    assert "peak mem" not in md
+    assert "Δ memory" not in md
+
+
+def test_render_markdown_includes_memory_columns_when_present():
+    baseline = {1024: _rec(1024, 1.0, peak_memory_mb=100.0)}
+    contender = {1024: _rec(1024, 1.0, peak_memory_mb=130.0)}
+    rows = compare.compare(baseline, contender, threshold_pct=0.1)
+    md = compare.render_markdown(rows, 0.1, "main", "PR")
+    assert (
+        "| grid points | main | PR | Δ runtime | main peak mem | PR peak mem | Δ memory |"
+        in md
+    )
+    assert "100.0MB" in md
+    assert "130.0MB" in md
+    assert "+30.0% ⚠️" in md
+
+
+def test_render_markdown_shows_na_for_row_missing_memory():
+    # 1024 has memory on both sides, 4096 is missing it on the contender.
+    baseline = {
+        1024: _rec(1024, 1.0, peak_memory_mb=100.0),
+        4096: _rec(4096, 2.0, peak_memory_mb=200.0),
+    }
+    contender = {
+        1024: _rec(1024, 1.0, peak_memory_mb=110.0),
+        4096: _rec(4096, 2.0),  # no memory tracked this run
+    }
+    rows = compare.compare(baseline, contender, threshold_pct=0.1)
+    md = compare.render_markdown(rows, 0.1, "main", "PR")
+    assert "peak mem" in md  # column present because 1024 has data
+    lines = [line for line in md.splitlines() if line.startswith("| 4,096")]
+    assert len(lines) == 1
+    assert lines[0].count("n/a") == 3  # baseline/contender/delta memory cells
+
+
 def test_build_report_end_to_end(tmp_path):
     base = _write(tmp_path, "main.json", [_rec(1024, 1.0), _rec(4096, 2.0)])
     cont = _write(tmp_path, "pr.json", [_rec(1024, 1.0), _rec(4096, 3.0)])  # +50%
@@ -152,6 +227,15 @@ def test_main_fail_on_regression_exit_code(tmp_path, capsys):
     # Without the flag it must stay informational (exit 0).
     rc2 = compare.main([base, cont, "--threshold-pct", "0.1"])
     assert rc2 == 0
+
+
+def test_main_fail_on_regression_triggered_by_memory_alone(tmp_path):
+    # Runtime is flat; only peak memory regresses. --fail-on-regression must
+    # still catch it since any_regression considers both metrics.
+    base = _write(tmp_path, "main.json", [_rec(1024, 1.0, peak_memory_mb=100.0)])
+    cont = _write(tmp_path, "pr.json", [_rec(1024, 1.0, peak_memory_mb=200.0)])
+    rc = compare.main([base, cont, "--threshold-pct", "1.0", "--fail-on-regression"])
+    assert rc == 1
 
 
 def test_main_writes_output_file(tmp_path):
