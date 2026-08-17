@@ -15,6 +15,7 @@ Tests verify:
 import networkx as nx
 import numpy as np
 import pytest
+import scipy.spatial
 
 import tests.utils as test_utils
 import weather_model_graphs as wmg
@@ -998,3 +999,113 @@ class TestNumericalCorrectness:
             pos = G.nodes[node]["pos"]
             assert isinstance(pos, np.ndarray)
             assert np.isfinite(pos).all()
+
+
+# ===========================
+# Lattice geometry: equilateral triangles and true node spacing
+# ===========================
+
+
+class TestTriangularGeometry:
+    """The lattice is scaled uniformly, so triangles stay equilateral and
+    ``mesh_node_spacing`` is the actual distance between neighbouring nodes,
+    whatever the aspect ratio of the domain."""
+
+    @pytest.mark.parametrize(
+        "domain_x, domain_y",
+        [(100, 100), (200, 60), (199, 59), (37, 113), (500, 25)],
+    )
+    def test_edges_are_equilateral(self, domain_x, domain_y):
+        xy = np.array(
+            [[0, 0], [domain_x, 0], [0, domain_y], [domain_x, domain_y]],
+            dtype=float,
+        )
+        G = create_single_level_2d_triangular_mesh_primitive(xy, mesh_node_spacing=5.0)
+        lengths = [
+            np.linalg.norm(G.nodes[u]["pos"] - G.nodes[v]["pos"]) for u, v in G.edges
+        ]
+        np.testing.assert_allclose(lengths, 5.0)
+
+    @pytest.mark.parametrize("spacing", [1.0, 2.5, 5.0, 12.0])
+    def test_spacing_is_the_edge_length(self, spacing):
+        xy = test_utils.create_rectangular_fake_xy(Nx=60, Ny=40)
+        G = create_single_level_2d_triangular_mesh_primitive(
+            xy, mesh_node_spacing=spacing
+        )
+        lengths = [
+            np.linalg.norm(G.nodes[u]["pos"] - G.nodes[v]["pos"]) for u, v in G.edges
+        ]
+        np.testing.assert_allclose(lengths, spacing)
+        np.testing.assert_allclose(G.graph["dx"], spacing)
+        np.testing.assert_allclose(G.graph["dy"], spacing * np.sqrt(3) / 2)
+
+    def test_mesh_covers_domain(self):
+        """Every grid point should have mesh nodes surrounding it, so the
+        lattice covers the domain rather than fitting inside it."""
+        xy = test_utils.create_rectangular_fake_xy(Nx=40, Ny=25)
+        G = create_single_level_2d_triangular_mesh_primitive(xy, mesh_node_spacing=3.0)
+        positions = np.array([G.nodes[n]["pos"] for n in G.nodes])
+        assert positions[:, 0].min() <= xy[:, 0].min()
+        assert positions[:, 0].max() >= xy[:, 0].max()
+        assert positions[:, 1].min() <= xy[:, 1].min()
+        assert positions[:, 1].max() >= xy[:, 1].max()
+
+    def test_nx_ny_lattice_stays_inside_domain(self, xy_small):
+        """With explicit counts the lattice is scaled to fit the domain."""
+        G = create_single_level_2d_triangular_mesh_primitive(xy_small, nx=6, ny=6)
+        positions = np.array([G.nodes[n]["pos"] for n in G.nodes])
+        assert positions[:, 0].min() >= xy_small[:, 0].min() - 1e-9
+        assert positions[:, 0].max() <= xy_small[:, 0].max() + 1e-9
+        assert positions[:, 1].min() >= xy_small[:, 1].min() - 1e-9
+        assert positions[:, 1].max() <= xy_small[:, 1].max() + 1e-9
+        lengths = [
+            np.linalg.norm(G.nodes[u]["pos"] - G.nodes[v]["pos"]) for u, v in G.edges
+        ]
+        np.testing.assert_allclose(lengths, lengths[0])
+
+
+class TestMultiLevelTriangularGeometry:
+    """Levels share an origin so coarse nodes land on fine nodes, which is
+    what multiscale connectivity needs to merge the levels."""
+
+    def test_level_spacings_are_exact_multiples(self, xy_large):
+        levels = create_multirange_2d_triangular_mesh_primitives(
+            xy=xy_large, mesh_node_spacing=2.0, interlevel_refinement_factor=3
+        )
+        if len(levels) < 2:
+            pytest.skip("domain only supports one level")
+        for i, G in enumerate(levels):
+            expected = 2.0 * 3**i
+            lengths = [
+                np.linalg.norm(G.nodes[u]["pos"] - G.nodes[v]["pos"])
+                for u, v in G.edges
+            ]
+            np.testing.assert_allclose(lengths, expected)
+
+    def test_coarse_nodes_coincide_with_fine_nodes(self, xy_large):
+        levels = create_multirange_2d_triangular_mesh_primitives(
+            xy=xy_large, mesh_node_spacing=2.0, interlevel_refinement_factor=3
+        )
+        if len(levels) < 2:
+            pytest.skip("domain only supports one level")
+        fine = np.array([levels[0].nodes[n]["pos"] for n in levels[0].nodes])
+        kdtree = scipy.spatial.KDTree(fine)
+        for G in levels[1:]:
+            coarse = np.array([G.nodes[n]["pos"] for n in G.nodes])
+            distances, _ = kdtree.query(coarse)
+            # coarse nodes inside the fine lattice must land on a fine node
+            assert (distances < 1e-8).sum() > 0.5 * len(coarse)
+
+    def test_flat_multiscale_is_connected(self, xy_large):
+        """Regression: independently scaled levels never merged, leaving one
+        disconnected component per level instead of a multiscale graph."""
+        components = wmg.create.create_all_graph_components(
+            coords=xy_large,
+            mesh_layout="triangular",
+            mesh_layout_kwargs=dict(mesh_node_spacing=2.0),
+            m2m_connectivity="flat_multiscale",
+            g2m_connectivity="nearest_neighbour",
+            m2g_connectivity="nearest_neighbour",
+            return_components=True,
+        )
+        assert nx.number_weakly_connected_components(components["m2m"]) == 1

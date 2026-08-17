@@ -29,9 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `mesh_layout="triangular"` support to `create_all_graph_components`, using
   `networkx.triangular_lattice_graph` to produce an equilateral-triangle lattice
   with 6-connectivity. Supports all three `m2m_connectivity` modes: `flat`,
-  `hierarchical`, and `flat_multiscale`. New module
-  `create/mesh/connectivity/triangular.py` contains the coordinate and
-  connectivity creation functions for triangular meshes.
+  `hierarchical`, and `flat_multiscale`. The lattice is scaled by a single
+  factor in both directions, so the triangles stay equilateral for any domain
+  shape and `mesh_node_spacing` is the actual distance between neighbouring
+  mesh nodes; the lattice is sized to cover the domain, so the outermost nodes
+  can sit just outside it. Multi-level meshes anchor every level to the same
+  origin, so coarser-level nodes coincide with finer-level ones as multiscale
+  connectivity requires. New module `create/mesh/layout/triangular.py` contains
+  the coordinate creation functions for triangular meshes.
   [\#80](https://github.com/mllam/weather-model-graphs/issues/80), @prajwal-tech07
 - Add `mesh_layout` argument to mesh graph creation functions, with `rectilinear`
   as the first supported layout. Uses a two-step architecture separating coordinate

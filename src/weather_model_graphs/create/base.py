@@ -153,8 +153,10 @@ def create_all_graph_components(
       8-star (cardinal + diagonal) spatial adjacency edges.
     - "triangular": Regular triangular lattice with ``mesh_node_spacing``
       resolution. Uses ``networkx.triangular_lattice_graph`` to produce
-      equilateral triangles with 6-connectivity. A CRS warning is emitted
-      if ``graph_crs`` is geographic (lat/lon).
+      equilateral triangles with 6-connectivity. ``mesh_node_spacing`` is the
+      distance between neighbouring mesh nodes, and the lattice is sized to
+      cover the domain, so the outermost mesh nodes can sit just outside it.
+      A CRS warning is emitted if ``graph_crs`` is geographic (lat/lon).
 
     mesh_layout_kwargs (for mesh_layout="rectilinear" or "triangular"):
     - mesh_node_spacing: float, distance between mesh nodes in coordinate units.
