@@ -48,11 +48,12 @@ jobs:
       BENCH_ARGS: >-
         --min-N 50 --max-N 200 --num-steps 4 --archetype keisler
         --track-memory --repetitions 5
-      # Calibrated against the measured noise floor, as planned on #144. With
-      # --repetitions 5, two runs of *identical* code differ by ~3% typically
-      # and ~6% at worst, so 10% sits clear of the noise while still catching a
-      # real slowdown. (It started at 0.1% deliberately, to expose that noise.)
-      THRESHOLD_PCT: "10"
+      # Still deliberately low, so that whatever noise remains stays visible in
+      # the PR comment. Repetitions (above) are the first half of making this
+      # number meaningful; the second half is calibrating it against runs on a
+      # real runner rather than a developer machine, which is why it is left
+      # alone here (see #144).
+      THRESHOLD_PCT: "0.1"
       BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
     steps:
       - name: Checkout PR

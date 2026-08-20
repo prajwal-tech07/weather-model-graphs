@@ -18,16 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against the runner's noise floor.
   [\#144](https://github.com/mllam/weather-model-graphs/issues/144), @prajwal-tech07
 - Add `--repetitions` to the scaling benchmark, which times each grid size
-  several times and reports the median rather than a single measurement. The
-  CI regression check uses it to damp run-to-run noise on shared runners
-  (measured: median noise between two runs of identical code drops from ~11%
-  to ~3%, worst case from ~33% to ~6%), making the reported deltas meaningful
-  enough to calibrate a threshold against. Peak memory continues to be
-  measured once per grid size, and is no longer measured during the timed
-  runs, so the reported runtimes are no longer inflated by `tracemalloc`.
-  With the noise floor now measured, the CI regression threshold is raised
-  from its deliberately-low starting value of 0.1% to 10%, which sits clear
-  of the residual noise while still catching a real slowdown.
+  several times and reports the median rather than a single measurement, so
+  that one unusually slow run doesn't get reported as a regression. The CI
+  regression check now uses it. Peak memory continues to be measured once per
+  grid size, and is no longer measured during the timed runs, so the reported
+  runtimes are no longer inflated by `tracemalloc`.
   [\#144](https://github.com/mllam/weather-model-graphs/issues/144), @prajwal-tech07
 
 ## [v0.4.0](https://github.com/mllam/weather-model-graphs/releases/tag/v0.4.0)
