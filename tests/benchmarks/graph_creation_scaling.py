@@ -3,7 +3,7 @@ import json
 import statistics
 import time
 import tracemalloc
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -52,7 +52,7 @@ def run_benchmark(
     archetype: str,
     track_memory: bool = False,
     repetitions: int = 1,
-) -> List[Dict[str, float]]:
+) -> List[Dict[str, Any]]:
     """
     Run the graph creation benchmark over a range of grid sizes.
 
@@ -112,7 +112,7 @@ def run_benchmark(
 
 
 def plot_runtime_scaling(
-    results: List[Dict[str, float]], archetype: str, output_path: str
+    results: List[Dict[str, Any]], archetype: str, output_path: str
 ):
     """Create a scaling plot for runtime vs number of grid points."""
     grid_points = [r["grid_points"] for r in results]
@@ -135,7 +135,7 @@ def plot_runtime_scaling(
 
 
 def plot_memory_scaling(
-    results: List[Dict[str, float]], archetype: str, output_path: str
+    results: List[Dict[str, Any]], archetype: str, output_path: str
 ):
     """Create a scaling plot for peak memory vs number of grid points."""
     # Filter out results without memory data (should not happen if track_memory=True)
