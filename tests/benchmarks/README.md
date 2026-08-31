@@ -63,3 +63,14 @@ Test scaling from $100 \times 100$ to $500 \times 500$ and open the plot interac
 ```bash
 uv run python -m tests.benchmarks.graph_creation_scaling --min-N 100 --max-N 500 --num-steps 10 --show
 ```
+
+## 3. CI Regression Comparison (`compare.py`)
+
+`compare.py` compares two `--output-json` files from `graph_creation_scaling.py`
+(e.g. one from `main`, one from a PR) and renders a Markdown table of the
+relative runtime and peak-memory change per grid size. This is what powers
+the automated benchmark regression check in CI (see #144).
+
+```bash
+uv run python -m tests.benchmarks.compare main.json pr.json --threshold-pct 0.1
+```
