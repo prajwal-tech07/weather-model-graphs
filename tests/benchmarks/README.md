@@ -55,6 +55,7 @@ uv run python -m tests.benchmarks.graph_creation_scaling
 - `--num-steps <int>`: Number of intermediate grid sizes to test between min and max. Default: 8
 - `--archetype <name>`: The archetype graph to create. Options are `keisler`, `oskarsson_hierarchical`, and `graphcast`.
 - `--repetitions <int>`: Time each grid size this many times and report the **median**. Default: 1
+  (CI uses 5; see the note below on why repeating helps.)
 - `--track-memory`: Also record peak memory usage (via `tracemalloc`) for each grid size.
 - `--output-plot-runtime <path>`: File path for the runtime plot. Default: `runtime_scaling.png`
 - `--output-plot-memory <path>`: File path for the memory plot (requires `--track-memory`).
